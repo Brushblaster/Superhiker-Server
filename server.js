@@ -1,41 +1,35 @@
 // server
-const spdy = require('spdy')
 const express = require('express')
 const app = express()
+const cors = require('cors')
 // const responseTime = require('response-time')
-const io = require('socket.io')
+const io = require('socket.io')(server)
+const pi = require('./pi/wpi')(io)
 require('dotenv').config({ silent: true })
 // const gpio = require("pi-gpio")
 const fs = require('fs')
-process.env.PORT = 3000
+const port = 3000
 
-/* gpio.open(12, "output", function (err) {		// Open pin 16 for output
-  gpio.write(12, 1, function () {			// Set pin 16 high (1)
-    gpio.close(12);						// Close pin 16
-  })
-}) */
+const mongoose = require('./models')
+mongoose.Promise = global.Promise
+const db = mongoose.connection
 
-/* app.get('/', function (req, res) {
-  gpio.open(12, "output", function (err) {		// Open pin 16 for output
-    if (err) throw err
-    gpio.write(12, 1, function () {			// Set pin 16 high (1)
-      gpio.close(12);						// Close pin 16
-    })
-  })
-}) */
+// Optional fallthrough error handler
+app.use(function onError (err, req, res, next) {
+  // The error id is attached to `res.sentry` to be returned
+  // and optionally displayed to the user for support.
+  res.statusCode = 500
+  res.end(res.sentry + '\n')
+  if (err) throw err
+})
 
-const options = {
-  key: fs.readFileSync(__dirname + '/server.key'),
-  cert: fs.readFileSync(__dirname + '/server.crt')
-}
+const server = require('http').Server(app)
+const io = require('socket.io')(server)
 
-spdy
-  .createServer(options, app)
-  .listen(3000, (error) => {
-    if (error) {
-      console.error(error)
-      return process.exit(1)
-    } else {
-      console.log('Listening on port: ' + 3000 + '...')
-    }
-  })
+app.use(cors())
+
+app.use(express.static('public'))
+
+server.listen(process.env.PORT || port)
+
+console.log(`Server started on ${port}`)
