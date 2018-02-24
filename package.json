@@ -14,17 +14,8 @@
     "dotenv": "^4.0.0",
     "express": "^4.16.2",
     "johnny-five": "^0.13.0",
-<<<<<<< HEAD
     "mongoose": "^4.13.5",
     "socket.io": "^2.0.4",
-=======
-    "pi-gpio": "0.0.8",
-    "raspi-io": "^8.1.0",
-    "response-time": "^2.3.2",
-    "socket.io": "^2.0.4",
-    "spdy": "^3.4.7",
-    "wiring-pi": "^2.2.1",
->>>>>>> ec4f4bb667bf16b4f36a1fc4358494beb5392028
     "wiringpi-node": "^2.4.4"
   },
   "devDependencies": {
