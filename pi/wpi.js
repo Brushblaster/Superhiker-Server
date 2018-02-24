@@ -1,17 +1,211 @@
+'strict'
 // requireing modules
-const wpi = require('wiring-pi')
-const io = require(socket.io)
-const cableCarRigi = require('./cableCarRigi')
-const cableCarPilatus = require('./cableCarPilatus')
-const lights = require('./lights')
+const five = require('johnny-five')
+const raspiConfig = require('../config/raspiConfig')
+const arduinoConfig = require('../config/arduinoConfig')
+const db = require('../models')
+
 
 exports = module.exports = function (io) {
-// init Socket.io
-io.sockets.on('connection', function (socket) {
+  // init Socket.io
+  io.sockets.on('connection', function (socket) {
+    // init johnny-five board
+    
+    let autoStop = false
+    
+    const board = new five.Board()
+    board.on('ready', function () {
+      var cableCarRigiStepper = new five.Stepper({
+        type: five.Stepper.TYPE.DRIVER,
+        stepsPerRev: 1600,
+        pins: {
+          step: arduinoConfig.cableCarRigiPul,
+          dir: arduinoConfig.cableCarRigiDir
+        }
+      })
+      var cableCarPilatus = new five.Stepper({
+        type: five.Stepper.TYPE.DRIVER,
+        stepsPerRev: 1600,
+        pins: {
+          step: arduinoConfig.cableCarPilatusPul,
+          dir: arduinoConfig.cableCarPilatusDir
+        }
+      })
+      var cableCarRigiEna = new five.Led(arduinoConfig.cableCarRigiEna)
+      var cableCarPilatusEna = new five.Led(arduinoConfig.cableCarPilatusEna)
+      
+    
+      // when connection established to front end dispatch
+      console.log('frontend has connected')
 
-//getting Setup credentials
-socket.on('setCredentials', function (data) {
-  wpi.setup(data.mode)
-}
+      // Drive Rigi up
+      socket.on('driveStepsRigiUp', function (data) {
+        console.log('Driving Rigi Up')
+        cableCarRigiStepper.rpm(data.speed)
+          .ccw()
+          .accel(data.accel)
+          .decel(data.accel)
+          .step(data.steps, function () {
+            console.log('Drived Rigi Up')
+          })
+      })
+    
+      // Drive Rigi Down
+      socket.on('driveStepsRigiDown', function (data) {
+        console.log('Driving Rigi Down')
+        cableCarRigiStepper.rpm(data.speed)
+          .cw()
+          .accel(data.accel)
+          .decel(data.accel)
+          .step(data.steps, function () {
+            console.log('Drived Rigi Down')
+          })
+      })
 
+      // Drive Pilatus up
+      socket.on('driveStepsPilatusUp', function (data) {
+        console.log('Driving Pilatus Up')
+        console.log(data)
+        cableCarPilatus.rpm(data.speed)
+          .ccw()
+          .accel(data.accel)
+          .decel(data.accel)
+          .step(data.steps, function () {
+            console.log('Drived Pilatus Up')
+          })
+      })
+
+      // Drive Pilatus down
+      socket.on('driveStepsPilatusDown', function (data) {
+        console.log('Driving Pilatus down')
+        console.log(data)
+        cableCarPilatus.rpm(data.speed)
+          .cw()
+          .accel(data.accel)
+          .decel(data.accel)
+          .step(data.steps, function () {
+            console.log('Drived Pilatus Down')
+          })
+      })
+
+      // drive to specific step
+      socket.on('driveToStep', function (data) {
+        console.log('driveStepsLeft...recieved: ' + data)
+        cableCarRigi.moveToStep(data.steps, data.acc, 17)
+      })
+
+      // stop Movement
+      socket.on('E-stop', function () {
+        console.log('stoping Drive...')
+        cableCarPilatusEna.on()
+        cableCarRigiEna.on()
+      })
+
+      // reset stop event
+      socket.on('resetStop', function () {
+        console.log('resetting Drive...')
+        cableCarPilatusEna.off()
+        cableCarRigiEna.off()
+      })
+
+      // Move to Step
+      socket.on('moveToStep', function (data) {
+        cableCarRigiStepper.rpm(180)
+        .ccw()
+        .accel(1000)
+        .decel(1600)
+        .step(data.toStep, function () {
+          console.log('finished')
+        })
+      })
+    
+      // Drive in Automatic mode
+      socket.on('driveAutoStart', function () {
+        let trigger = false
+        
+        let config = {}
+
+        autoStop = false
+
+        db.settings
+          .find({ config: 1 }).limit(1)
+          .where('config').ne(null)
+          .sort('-createdOn')
+          .then(settings => {
+            
+            config = settings[0].config
+            console.log('Auto started')
+            forwardRigi(cableCarRigiStepper, config)
+            forwardPilatus(cableCarPilatus, config)
+          })
+          .catch(error => console.log(error))
+        
+
+        console.log(config)
+
+
+        // driving Rigi in Automode
+
+        function forwardRigi (cableCarRigiStepper, config) {
+          cableCarRigiStepper.rpm(config.rigiSpeed)
+            .ccw()
+            .accel(config.rigiAccel)
+            .decel(config.rigiAccel)
+            .step(config.rigiSteps, function (n) {
+              setTimeout(function () {
+                backwardRigi(cableCarRigiStepper, config)
+              }, config.rigiTimeout)
+            })
+          }
+
+        function backwardRigi (cableCarRigiStepper, config) {
+          cableCarRigiStepper.rpm(config.rigiSpeed)
+            .cw()
+            .accel(config.rigiAccel)
+            .decel(config.rigiAccel)
+            .step(config.rigiSteps, function (n) {
+              if (!autoStop) {
+                setTimeout(function () {
+                  forwardRigi(cableCarRigiStepper, config)
+                }, config.rigiTimeout)
+              }
+            })
+        }
+
+        // Driving Pilatus in Automode
+
+        function forwardPilatus(cableCarPilatus, config) {
+          cableCarPilatus.rpm(config.pilatusSpeed)
+            .ccw()
+            .accel(config.pilatusAccel)
+            .decel(config.pilatusAccel)
+            .step(config.pilatusSteps, function (n) {
+              setTimeout(function () {
+                backwardPilatus(cableCarPilatus, config)
+              }, config.pilatusTimeout)
+            })
+        }
+
+        function backwardPilatus(cableCarPilatus, config) {
+          cableCarPilatus.rpm(config.pilatusSpeed)
+            .cw()
+            .accel(config.pilatusAccel)
+            .decel(config.pilatusAccel)
+            .step(config.pilatusSteps, function (n) {
+              if (!autoStop) {
+                setTimeout(function () {
+                  forwardPilatus(cableCarPilatus, config)
+                }, config.pilatusTimeout)
+              }
+            })
+        }
+      })
+
+      // Stop Automatic Mode
+
+      socket.on('driveAutoStop', function () {
+        autoStop = true
+      })
+    })
+  }).setMaxListeners(0)
 }
